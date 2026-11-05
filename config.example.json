@@ -1,0 +1,27 @@
+{
+  "database": {
+    "host": "127.0.0.1:3306",
+    "user": "CHANGE_ME",
+    "password": "CHANGE_ME",
+    "name": "radius"
+  },
+  "iface": "enp1s0f1np1",
+  "log_path": "/var/log/accel-ppp/accel-ppp.log",
+  "emerg_path": "/var/log/accel-ppp/emerg.log",
+  "nft": {
+    "family": "inet",
+    "table": "filter"
+  },
+  "networks": {
+    "main": "10.92.0.0/24",
+    "guest": "10.0.0.0/24"
+  },
+  "accel_unit": "accel-ppp",
+  "radius_container": "bras-freeradius",
+  "db_container": "bras-mariadb",
+  "refresh": "2s",
+  "slow_refresh": "10s",
+  "cmd_timeout": "5s",
+  "tail_lines": 500,
+  "tail_bytes": 524288
+}
