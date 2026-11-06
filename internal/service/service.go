@@ -40,6 +40,10 @@ type Service struct {
 	slowAt   time.Time
 	slowData slowData
 	slowOK   bool
+
+	uplink    string
+	prevUpNet procfs.NetStats
+	prevUpAt  time.Time
 }
 
 // New создаёт сервис.
@@ -48,6 +52,27 @@ func New(cfg config.Config, st *store.Store, ac *accel.Client, nc *nft.Client, d
 		cfg: cfg, store: st, accel: ac, nft: nc, dock: dc, run: run,
 		now: time.Now,
 	}
+}
+
+// UplinkInfo — состояние интерфейса аплинка (default route).
+type UplinkInfo struct {
+	Iface     string
+	OperState string
+	SpeedMbps int64
+	Duplex    string
+	MTU       int64
+
+	RxRate float64
+	TxRate float64
+
+	RxBytes   uint64
+	TxBytes   uint64
+	RxPackets uint64
+	TxPackets uint64
+	RxErrors  uint64
+	TxErrors  uint64
+	RxDropped uint64
+	TxDropped uint64
 }
 
 // Dashboard — снимок для главного экрана.
@@ -68,6 +93,8 @@ type Dashboard struct {
 	TxRate    float64
 	RxPackets uint64
 	TxPackets uint64
+
+	Uplink UplinkInfo
 
 	Conntrack      int
 	ConntrackTotal int
@@ -205,7 +232,85 @@ func (s *Service) Dashboard(ctx context.Context) Dashboard {
 	}
 
 	s.applySlow(ctx, &d)
+	s.fillUplink(ctx, now, &d)
 	return d
+}
+
+// fillUplink заполняет состояние аплинка: default route, sysfs-счётчики,
+// скорость/дуплекс и производные скорости.
+func (s *Service) fillUplink(ctx context.Context, now time.Time, d *Dashboard) {
+	name := s.cfg.UplinkIface
+	if name == "" {
+		s.mu.Lock()
+		name = s.uplink
+		s.mu.Unlock()
+	}
+	if name == "" {
+		out, err := s.run.RunSudo(ctx, "ip", "route", "show", "default")
+		if err != nil {
+			d.Warnings = append(d.Warnings, "uplink: не удалось определить default route: "+err.Error())
+			return
+		}
+		for _, line := range strings.Split(out, "\n") {
+			fields := strings.Fields(line)
+			for i := 0; i+1 < len(fields); i++ {
+				if fields[i] == "dev" {
+					name = fields[i+1]
+					break
+				}
+			}
+			if name != "" {
+				break
+			}
+		}
+		if name == "" {
+			d.Warnings = append(d.Warnings, "uplink: в default route нет dev")
+			return
+		}
+		s.mu.Lock()
+		s.uplink = name
+		s.mu.Unlock()
+	}
+
+	up := UplinkInfo{Iface: name}
+	st, err := procfs.ReadNetStats(name)
+	if err != nil {
+		d.Errors = append(d.Errors, "uplink "+name+": "+err.Error())
+		return
+	}
+	li, err := procfs.ReadLinkInfo(name)
+	if err != nil {
+		d.Warnings = append(d.Warnings, "uplink "+name+" link: "+err.Error())
+	}
+	up.OperState = li.OperState
+	up.SpeedMbps = li.SpeedMbps
+	up.Duplex = li.Duplex
+	up.MTU = li.MTU
+	up.RxBytes, up.TxBytes = st.RxBytes, st.TxBytes
+	up.RxPackets, up.TxPackets = st.RxPackets, st.TxPackets
+	up.RxErrors, up.TxErrors = st.RxErrors, st.TxErrors
+	up.RxDropped, up.TxDropped = st.RxDropped, st.TxDropped
+
+	s.mu.Lock()
+	if !s.prevUpAt.IsZero() {
+		dt := now.Sub(s.prevUpAt).Seconds()
+		if dt > 0 {
+			if st.RxBytes >= s.prevUpNet.RxBytes {
+				up.RxRate = float64(st.RxBytes-s.prevUpNet.RxBytes) / dt
+			}
+			if st.TxBytes >= s.prevUpNet.TxBytes {
+				up.TxRate = float64(st.TxBytes-s.prevUpNet.TxBytes) / dt
+			}
+		}
+	}
+	s.prevUpNet = st
+	s.prevUpAt = now
+	s.mu.Unlock()
+
+	if up.OperState != "" && up.OperState != "up" {
+		d.Warnings = append(d.Warnings, "uplink "+name+" в состоянии "+up.OperState)
+	}
+	d.Uplink = up
 }
 
 func (s *Service) applySlow(ctx context.Context, d *Dashboard) {

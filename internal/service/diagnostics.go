@@ -90,6 +90,22 @@ func (s *Service) Diagnostics(ctx context.Context) []Check {
 		add("accel-ppp autostart", Warn, "unit не enabled — после ребута не поднимется")
 	}
 
+	if v, err := s.AccelVersion(ctx); err != nil {
+		add("accel-ppp version", Warn, err.Error())
+	} else {
+		add("accel-ppp version", OK, v)
+	}
+	if v, err := s.KernelVersion(ctx); err != nil {
+		add("kernel", Warn, err.Error())
+	} else {
+		add("kernel", OK, v)
+	}
+	if n, err := s.VLANCount(ctx); err != nil {
+		add("VLAN (vlan_mon)", Warn, err.Error())
+	} else {
+		add("VLAN (vlan_mon)", OK, fmt.Sprintf("%d создано", n))
+	}
+
 	mods, merr := procfs.ReadModules()
 	if merr != nil {
 		add("kernel modules", Fail, "не удалось прочитать /proc/modules: "+merr.Error())

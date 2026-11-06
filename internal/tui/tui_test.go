@@ -46,6 +46,10 @@ func (fakeService) TerminateSession(context.Context, string) (string, error) {
 func (fakeService) ReloadAccel(context.Context) (string, error)      { return "", nil }
 func (fakeService) RestartAccel(context.Context) (string, error)     { return "", nil }
 func (fakeService) HardRestartAccel(context.Context) (string, error) { return "", nil }
+func (fakeService) Conntrack(context.Context, string) ([]service.ConntrackEntry, error) {
+	return nil, nil
+}
+func (fakeService) AccelConfig(context.Context) ([]string, error) { return nil, nil }
 
 func TestNewBuildsAllPages(t *testing.T) {
 	app := New(fakeService{}, config.Defaults())
@@ -63,11 +67,14 @@ func TestNewBuildsAllPages(t *testing.T) {
 	if app.rings[pageBlocks] == nil || len(app.rings[pageBlocks].items) != 6 {
 		t.Fatalf("фокус-кольцо nft: %+v", app.rings[pageBlocks])
 	}
-	if app.rings[pageSessions] == nil || len(app.rings[pageSessions].items) != 5 {
+	if app.rings[pageSessions] == nil || len(app.rings[pageSessions].items) != 7 {
 		t.Fatalf("фокус-кольцо сессий: %+v", app.rings[pageSessions])
 	}
 	if app.rings[pageLogs] == nil || len(app.rings[pageLogs].items) != 2 {
 		t.Fatalf("фокус-кольцо логов: %+v", app.rings[pageLogs])
+	}
+	if app.rings[pageDiag] == nil || len(app.rings[pageDiag].items) != 6 {
+		t.Fatalf("фокус-кольцо диагностики: %+v", app.rings[pageDiag])
 	}
 }
 
@@ -223,5 +230,74 @@ func TestLogsFilter(t *testing.T) {
 	}
 	if !strings.Contains(p.view.GetText(true), "Access-Reject") {
 		t.Fatal("нет строки в TextView")
+	}
+}
+
+func TestDashboardUplinkRender(t *testing.T) {
+	p := newDashboardPage()
+	p.Render(service.Dashboard{
+		Iface: "eth0",
+		Uplink: service.UplinkInfo{
+			Iface: "wan0", OperState: "up", Duplex: "full", SpeedMbps: 1000,
+			RxBytes: 4 << 30, TxBytes: 1 << 30, RxPackets: 8_600_000, TxPackets: 3_000_000,
+			RxDropped: 1, TxDropped: 23, RxErrors: 2, TxErrors: 3,
+		},
+	})
+	txt := p.net.GetText(true)
+	for _, want := range []string{"Uplink", "wan0", "1000 Mb/s", "Up дропы", "23", "4.0 GB"} {
+		if !strings.Contains(txt, want) {
+			t.Fatalf("в панели сети нет %q:\n%s", want, txt)
+		}
+	}
+}
+
+func TestConfigViewerFilter(t *testing.T) {
+	p := newLogsPageTitle("КОНФИГ ACCEL-PPP", false)
+	p.Render([]string{"[pppoe]", "interface=ppp0", "[ipoe]"}, nil)
+	p.query = "pppoe"
+	p.apply(false)
+	if len(p.filtered) != 1 {
+		t.Fatalf("filtered=%+v", p.filtered)
+	}
+	if !strings.Contains(p.view.GetTitle(), "КОНФИГ ACCEL-PPP") {
+		t.Fatalf("title=%q", p.view.GetTitle())
+	}
+}
+
+func TestTcpdumpPageAddLine(t *testing.T) {
+	p := newTcpdumpPage()
+	p.Reset(accel.Session{IfName: "eth0.100", IP: "192.0.2.2"})
+	for i := 0; i < tcpdumpMaxLines+5; i++ {
+		p.AddLine("12:00:00.000000 IP 192.0.2.2 > 192.0.2.1: ICMP echo request")
+	}
+	if len(p.lines) != tcpdumpMaxLines {
+		t.Fatalf("lines=%d", len(p.lines))
+	}
+	if !strings.Contains(p.view.GetTitle(), "TCPDUMP") || !strings.Contains(p.view.GetTitle(), "192.0.2.2") {
+		t.Fatalf("title=%q", p.view.GetTitle())
+	}
+}
+
+func TestConntrackPageFilterAndFind(t *testing.T) {
+	p := newConntrackPage()
+	p.Open(accel.Session{Username: "u1", IP: "192.0.2.2"})
+	p.Render([]service.ConntrackEntry{
+		{Key: "a", Status: "SAC", Src: "192.0.2.2", SrcPort: 1234, Dst: "192.0.2.1", DstPort: 80, Proto: "tcp", ProtoNum: 6, Timeout: 95, TCPState: "ESTABLISHED", OrigBytes: 100},
+		{Key: "b", Status: "C", Src: "192.0.2.2", SrcPort: 5353, Dst: "192.0.2.1", DstPort: 53, Proto: "udp", ProtoNum: 17, Timeout: 10},
+	}, nil)
+	if len(p.filtered) != 2 {
+		t.Fatalf("len=%d", len(p.filtered))
+	}
+	p.query = "tcp"
+	p.apply("")
+	if len(p.filtered) != 1 || p.filtered[0].Key != "a" {
+		t.Fatalf("filtered=%+v", p.filtered)
+	}
+	key, idx, total := p.FindNext(1)
+	if total != 1 || idx != 1 || key != "a" {
+		t.Fatalf("find: %q %d/%d", key, idx, total)
+	}
+	if !strings.Contains(p.table.GetTitle(), "CONNTRACK") {
+		t.Fatalf("title=%q", p.table.GetTitle())
 	}
 }

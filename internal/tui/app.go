@@ -27,6 +27,9 @@ const (
 	pageSessions    = "sessions"
 	pageDiag        = "diagnostics"
 	pageModal       = "modal"
+	pageConntrack   = "conntrack"
+	pageConfig      = "config"
+	pageTcpdump     = "tcpdump"
 )
 
 // Service — то, что TUI нужно от прикладного слоя.
@@ -49,6 +52,8 @@ type Service interface {
 	RestartAccel(context.Context) (string, error)
 	HardRestartAccel(context.Context) (string, error)
 	Diagnostics(context.Context) []service.Check
+	Conntrack(context.Context, string) ([]service.ConntrackEntry, error)
+	AccelConfig(context.Context) ([]string, error)
 }
 
 // App — корневое приложение.
@@ -68,6 +73,12 @@ type App struct {
 	sess *sessionsPage
 	diag *diagPage
 
+	conntrack *conntrackPage
+	conf      *logsPage
+	tcpdump   *tcpdumpPage
+	ctSession accel.Session
+	tdCancel  context.CancelFunc
+
 	rings map[string]*focusRing
 
 	mu      sync.RWMutex
@@ -75,6 +86,10 @@ type App struct {
 
 	modalOpen bool
 	prevFocus tview.Primitive
+
+	popupOpen bool
+	popupKind string
+	prevPage  string
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -87,6 +102,8 @@ type App struct {
 	busySess  atomic.Bool
 	busyDiag  atomic.Bool
 	busyFind  atomic.Bool
+	busyCT    atomic.Bool
+	busyConf  atomic.Bool
 	detailGen atomic.Uint64
 	elemGen   atomic.Uint64
 
@@ -124,6 +141,9 @@ func New(svc Service, cfg config.Config) *App {
 	a.logs = newLogsPage()
 	a.sess = newSessionsPage(a)
 	a.diag = newDiagPage(a)
+	a.conntrack = newConntrackPage()
+	a.conf = newLogsPageTitle("КОНФИГ ACCEL-PPP", false)
+	a.tcpdump = newTcpdumpPage()
 
 	a.pages.AddPage(pageDashboard, a.dash.root, true, true)
 	a.pages.AddPage(pageSubscribers, a.subs.root, true, false)
@@ -141,10 +161,12 @@ func New(svc Service, cfg config.Config) *App {
 	)
 	a.rings[pageLogs] = newFocusRing(a.logs.view, a.logs.search)
 	a.rings[pageSessions] = newFocusRing(
-		a.sess.table, a.sess.search, a.sess.bmonBtn, a.sess.killBtn, a.sess.refreshBtn,
+		a.sess.table, a.sess.search, a.sess.bmonBtn, a.sess.tcpdumpBtn,
+		a.sess.ctBtn, a.sess.killBtn, a.sess.refreshBtn,
 	)
 	a.rings[pageDiag] = newFocusRing(
-		a.diag.table, a.diag.reloadBtn, a.diag.restartBtn, a.diag.hardBtn, a.diag.refreshBtn,
+		a.diag.table, a.diag.reloadBtn, a.diag.restartBtn, a.diag.hardBtn,
+		a.diag.confBtn, a.diag.refreshBtn,
 	)
 
 	a.root = tview.NewFlex().SetDirection(tview.FlexRow).
@@ -196,6 +218,12 @@ func (a *App) loop() {
 		case <-a.ctx.Done():
 			return
 		case <-tick.C:
+			if a.popupOpen {
+				if a.popupKind == "conntrack" {
+					a.loadConntrack()
+				}
+				continue
+			}
 			switch a.pageName() {
 			case pageDashboard:
 				a.loadDashboard()
@@ -219,6 +247,9 @@ func (a *App) inputCapture(ev *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 		return ev
+	}
+	if a.popupOpen {
+		return a.popupInput(ev)
 	}
 	key := ev.Key()
 
@@ -384,6 +415,12 @@ func (a *App) inputCapture(ev *tcell.EventKey) *tcell.EventKey {
 			case 'b', 'B':
 				a.runBmon()
 				return nil
+			case 't', 'T':
+				a.runTcpdump()
+				return nil
+			case 'c', 'C':
+				a.openConntrackSelected()
+				return nil
 			}
 		case pageDiag:
 			switch strings.ToUpper(string(ev.Rune())) {
@@ -395,6 +432,9 @@ func (a *App) inputCapture(ev *tcell.EventKey) *tcell.EventKey {
 				return nil
 			case "K":
 				a.confirmHardRestart()
+				return nil
+			case "C":
+				a.openAccelConfig()
 				return nil
 			}
 		}
@@ -886,9 +926,9 @@ func pageHint(page string) string {
 	case pageLogs:
 		return "/ или Ctrl+F — поиск, Esc — сброс, PgUp/PgDn — прокрутка"
 	case pageSessions:
-		return "Enter — меню (bmon/прервать), B — bmon, Del — прервать, / — поиск"
+		return "Enter — меню, B — bmon, T — tcpdump, C — conntrack, Del — прервать, / — поиск"
 	case pageDiag:
-		return "R — reload, S — restart, K — hard restart, F5 — проверки"
+		return "C — конфиг accel-ppp, R — reload, S — restart, K — hard restart, F5 — проверки"
 	default:
 		return "обновление каждые 2 с; F5 — обновить"
 	}

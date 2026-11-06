@@ -22,9 +22,10 @@ const (
 	DefaultDBHost = "127.0.0.1:3306"
 	DefaultDBName = "radius"
 
-	DefaultIface   = "enp1s0f1np1"
-	DefaultLogPath = "/var/log/accel-ppp/accel-ppp.log"
-	DefaultEmerg   = "/var/log/accel-ppp/emerg.log"
+	DefaultIface     = "enp1s0f1np1"
+	DefaultLogPath   = "/var/log/accel-ppp/accel-ppp.log"
+	DefaultEmerg     = "/var/log/accel-ppp/emerg.log"
+	DefaultAccelConf = "/etc/accel-ppp.conf"
 
 	DefaultNFTFamily = "inet"
 	DefaultNFTTable  = "filter"
@@ -69,6 +70,9 @@ type Config struct {
 	Iface     string
 	LogPath   string
 	EmergPath string
+	AccelConf string
+	// UplinkIface пустой — определить по маршруту по умолчанию.
+	UplinkIface string
 
 	NFTFamily string
 	NFTTable  string
@@ -102,10 +106,12 @@ type fileConfig struct {
 		Password string `json:"password"`
 		Name     string `json:"name"`
 	} `json:"database"`
-	Iface     string `json:"iface"`
-	LogPath   string `json:"log_path"`
-	EmergPath string `json:"emerg_path"`
-	NFT       *struct {
+	Iface       string `json:"iface"`
+	LogPath     string `json:"log_path"`
+	EmergPath   string `json:"emerg_path"`
+	AccelConf   string `json:"accel_conf"`
+	UplinkIface string `json:"uplink_iface"`
+	NFT         *struct {
 		Family string `json:"family"`
 		Table  string `json:"table"`
 	} `json:"nft"`
@@ -133,6 +139,7 @@ func Defaults() Config {
 		Iface:       DefaultIface,
 		LogPath:     DefaultLogPath,
 		EmergPath:   DefaultEmerg,
+		AccelConf:   DefaultAccelConf,
 		NFTFamily:   DefaultNFTFamily,
 		NFTTable:    DefaultNFTTable,
 		NetMain:     DefaultNetMain,
@@ -199,6 +206,12 @@ func Load() (Config, error) {
 	}
 	if v := strings.TrimSpace(fc.EmergPath); v != "" {
 		cfg.EmergPath = v
+	}
+	if v := strings.TrimSpace(fc.AccelConf); v != "" {
+		cfg.AccelConf = v
+	}
+	if v := strings.TrimSpace(fc.UplinkIface); v != "" {
+		cfg.UplinkIface = v
 	}
 	if fc.NFT != nil {
 		if v := strings.TrimSpace(fc.NFT.Family); v != "" {

@@ -113,6 +113,10 @@ type NetStats struct {
 	TxBytes   uint64
 	RxPackets uint64
 	TxPackets uint64
+	RxErrors  uint64
+	TxErrors  uint64
+	RxDropped uint64
+	TxDropped uint64
 }
 
 // ReadNetStats читает счётчики из /sys/class/net/<iface>/statistics.
@@ -144,7 +148,57 @@ func ReadNetStatsAt(root, iface string) (NetStats, error) {
 	if st.TxPackets, err = read("tx_packets"); err != nil {
 		return NetStats{}, err
 	}
+	if st.RxErrors, err = read("rx_errors"); err != nil {
+		return NetStats{}, err
+	}
+	if st.TxErrors, err = read("tx_errors"); err != nil {
+		return NetStats{}, err
+	}
+	if st.RxDropped, err = read("rx_dropped"); err != nil {
+		return NetStats{}, err
+	}
+	if st.TxDropped, err = read("tx_dropped"); err != nil {
+		return NetStats{}, err
+	}
 	return st, nil
+}
+
+// LinkInfo — состояние физического/виртуального интерфейса из sysfs.
+type LinkInfo struct {
+	OperState string
+	SpeedMbps int64
+	Duplex    string
+	MTU       int64
+}
+
+// ReadLinkInfo читает /sys/class/net/<iface>/{operstate,speed,duplex,mtu}.
+func ReadLinkInfo(iface string) (LinkInfo, error) {
+	return ReadLinkInfoAt("/sys/class/net", iface)
+}
+
+// ReadLinkInfoAt — версия для тестов. Скорость и дуплекс у виртуальных
+// интерфейсов могут отсутствовать — это не считается ошибкой.
+func ReadLinkInfoAt(root, iface string) (LinkInfo, error) {
+	base := fmt.Sprintf("%s/%s", strings.TrimRight(root, "/"), iface)
+	state, err := os.ReadFile(base + "/operstate")
+	if err != nil {
+		return LinkInfo{}, err
+	}
+	li := LinkInfo{OperState: strings.TrimSpace(string(state))}
+	if data, err := os.ReadFile(base + "/speed"); err == nil {
+		if v, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64); err == nil && v > 0 {
+			li.SpeedMbps = v
+		}
+	}
+	if data, err := os.ReadFile(base + "/duplex"); err == nil {
+		li.Duplex = strings.TrimSpace(string(data))
+	}
+	if data, err := os.ReadFile(base + "/mtu"); err == nil {
+		if v, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64); err == nil {
+			li.MTU = v
+		}
+	}
+	return li, nil
 }
 
 // ReadModules возвращает имена загруженных модулей ядра.

@@ -61,6 +61,22 @@ func New(run *execx.Runner, bin string) *Client {
 	return &Client{run: run, bin: bin}
 }
 
+// ShowVersion возвращает версию accel-ppp из "accel-cmd show version".
+func (c *Client) ShowVersion(ctx context.Context) (string, error) {
+	out, err := c.run.Run(ctx, c.bin, "show", "version")
+	if err != nil {
+		return "", err
+	}
+	line := strings.TrimSpace(out)
+	if i := strings.IndexByte(line, '\n'); i >= 0 {
+		line = strings.TrimSpace(line[:i])
+	}
+	if line == "" {
+		return "", fmt.Errorf("accel-cmd show version: пустой ответ")
+	}
+	return line, nil
+}
+
 // ShowStat выполняет и разбирает "accel-cmd show stat".
 func (c *Client) ShowStat(ctx context.Context) (Stat, error) {
 	out, err := c.run.Run(ctx, c.bin, "show", "stat")

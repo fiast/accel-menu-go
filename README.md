@@ -10,18 +10,18 @@
 - Go 1.27+;
 - TUI: [`github.com/rivo/tview`](https://github.com/rivo/tview) v0.42.0, события tcell v2.8.1;
 - БД: `database/sql` + [`github.com/go-sql-driver/mysql`](https://github.com/go-sql-driver/mysql) v1.10.1;
-- системные утилиты: `accel-cmd`, `nft`, `ip`, `docker`, `bmon` через `os/exec` (без shell).
+- системные утилиты: `accel-cmd`, `nft`, `ip`, `docker`, `bmon`, `tcpdump` через `os/exec` (без shell).
 
 ## Экраны
 
 | Клавиша | Экран | Что показывает |
 |---|---|---|
-| **F1** | Дашборд | LoadAvg, RAM, CPU/RSS/uptime accel, Rx/Tx и пакеты `enp1s0f1np1`, conntrack, masquerade-интерфейсы и внешние IP, сессии PPPoE/IPoE, **модули авторизации** (PPPoE, IPoE, L2TP, PPTP, SSTP и их active), RADIUS, контейнеры `bras-freeradius` / `bras-mariadb`, статус БД. Обновление каждые 2 с. |
+| **F1** | Дашборд | LoadAvg, RAM, CPU/RSS/uptime accel; абонентский интерфейс `enp1s0f1np1` (Rx/Tx, пакеты); **аплинк по default route**: состояние up/down, duplex, скорость, Rx/Tx rate, пакеты, суммарные байты, дропы и ошибки; conntrack, masquerade-интерфейсы и внешние IP, сессии PPPoE/IPoE, **модули авторизации** (PPPoE, IPoE, L2TP, PPTP, SSTP и их active), RADIUS, контейнеры `bras-freeradius` / `bras-mariadb`, статус БД. Обновление каждые 2 с. |
 | **F2** | Абоненты | Список `radcheck` (логин, тип, **IP**), поиск по логину/MAC/IP, счётчик в заголовке, `n`/`N` — Find Next/Prev, `*`/`F7` — показать/скрыть пароль в карточке. Карточка: `radreply`, `radusergroup`, последние 5 сессий `radacct`, последние 5 авторизаций `radpostauth` (`Access-Reject` красным). Создание (Ins) с выбором типа PPPoE/IPoE, удаление (Del) с подтверждением. |
 | **F3** | Блокировки (nft) | Штатные set-ы `ipset_1`, `ipset_freezee`, `ipset_disabled`, `ipset_deleted`, `ipset_unknown`, `allowed_ipset` + обнаруженные `ipset_*`; количество элементов, IP и остаток TTL. Поиск IP по всем set-ам (`Enter`), `n`/`N` — следующий/предыдущий найденный set. Очистка set-а (F8) и удаление IP (Del) с подтверждением. |
 | **F4** | Логи | Хвост `/var/log/accel-ppp/accel-ppp.log` с подсветкой `Access-Reject`, `authentication failed`, `AuthNak`, `warn:`; поиск (`/` или Ctrl+F), сброс (Esc), полоса прокрутки, автообновление 2 с. |
-| **F6** | Сессии | Таблица `accel-cmd show sessions` (ifname, username, calling-sid, ip, rate-limit, type, comp, state, uptime), поиск, навигация, `B` — запуск `bmon` по интерфейсу сессии, `Del` — прервать сессию (`accel-cmd terminate if … soft`). |
-| **F9** | Диагностика | `[ OK ]` / `[WARN]` / `[FAIL]`: root, accel-ppp active/enabled, модули `ipoe`/`vlan_mon`, контейнеры, NAT `10.92.0.0/24`, `accel-cmd`, MariaDB, лог, conntrack, `ip_forward`. Кнопки/клавиши управления демоном: `R` — reload, `S` — restart, `K` — hard restart. |
+| **F6** | Сессии | Таблица `accel-cmd show sessions` (ifname, username, calling-sid, ip, rate-limit, type, comp, state, uptime), поиск, навигация. `B` — `bmon`, `T` — живой `tcpdump` в отдельном окне, `C` — **conntrack** по IP сессии в отдельном окне с поиском/Find Next, `Del` — прервать сессию (`accel-cmd terminate if … soft`). |
+| **F9** | Диагностика | `[ OK ]` / `[WARN]` / `[FAIL]`: root, accel-ppp active/enabled, **версия accel-ppp**, **версия ядра**, **количество VLAN (vlan_mon)**, модули `ipoe`/`vlan_mon`, контейнеры, NAT `10.92.0.0/24`, `accel-cmd`, MariaDB, лог, conntrack, `ip_forward`. Кнопки/клавиши: `C` — просмотр `accel-ppp.conf` с поиском и прокруткой, `R` — reload, `S` — restart, `K` — hard restart. |
 
 Нижняя строка — подсказки F-клавиш, над ней — статус последнего действия/ошибки и контекстные клавиши.
 `F5` — обновить текущий экран, `F10` или `Esc` — выход (с подтверждением).
@@ -36,7 +36,8 @@
 - `Enter` — перейти от поиска к списку; для F2/F3 — выполнить поиск.
 - `n` / `N` (или `Ctrl+N` / `Ctrl+P`) — Find Next / Find Previous по найденным строкам.
 - В заголовке F2 отображается количество: `АБОНЕНТЫ — N` или `найдено X из Y`.
-- В журнале справа отображается полоса прокрутки (позиция и размер бегунка соответствуют `PgUp`/`PgDn`/стрелкам).
+- `/` в окне conntrack/конфига — поиск; `n` / `N` — Find Next/Prev в conntrack.
+- В журнале и конфиге справа отображается полоса прокрутки (позиция и размер бегунка соответствуют `PgUp`/`PgDn`/стрелкам).
 
 ### Абоненты (F2)
 
@@ -46,16 +47,27 @@
 - `*` или `F7` (кнопка «Пароль (*)») показывает пароль в карточке; повторное нажатие скрывает.
   Пароль хранится в БД (radcheck) и в лог/файл настроек не попадает.
 
-### bmon и завершение сессии (F6)
+### bmon, tcpdump, conntrack и завершение сессии (F6)
 
-- Выберите сессию стрелками; `Enter` открывает меню действий (bmon / прервать / отмена).
+- Выберите сессию стрелками; `Enter` открывает меню действий
+  (bmon / tcpdump / conntrack / прервать / отмена).
 - `B` (или кнопка «bmon (B)») приостанавливает TUI и запускает
   `bmon -p <ifname>` для интерфейса выбранной сессии. Выход из bmon (`q`, затем `y`) возвращает в TUI.
+- `T` (или кнопка «tcpdump (T)») открывает окно живого захвата:
+  `tcpdump -n -l -i <ifname> host <ip>`. Вывод прокручивается (`PgUp`/`PgDn`/стрелки),
+  `Esc` останавливает tcpdump и закрывает окно.
+- `C` (или кнопка «conntrack (C)») открывает отдельное окно conntrack по IP выбранной сессии.
+  Колонки: статус, src/sport, dst/dport, reply src/dst, protocol, timeout, TCP state,
+  orig/reply rate и orig/reply bytes. `/` — поиск, `Enter` — к списку, `n`/`N` — Find Next/Prev,
+  `Esc` — закрыть; окно обновляется каждые 2 с.
+  Нужен установленный `tcpdump`; conntrack читается из `/proc/net/nf_conntrack` (нужен root).
 - `Del` (или кнопка «Прервать») показывает подтверждение и выполняет
   `accel-cmd terminate if <ifname> soft`; после этого таблица сессий обновляется.
 
-### Управление accel-ppp (F9)
+### Управление accel-ppp и конфиг (F9)
 
+- `C` — открыть `/etc/accel-ppp.conf` в окне с прокруткой, полосой прокрутки и поиском
+  (`/`/`Ctrl+F`, `Enter` — к тексту, `PgUp`/`PgDn`, `Esc` — закрыть).
 - `R` — `systemctl reload accel-ppp` (без разрыва сессий).
 - `S` — `systemctl restart accel-ppp` (сессии разрываются).
 - `K` — `systemctl kill -s SIGKILL` + `systemctl restart` (жёсткий рестарт).
@@ -70,7 +82,7 @@
 make build
 # или
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-  -ldflags "-s -w -X main.version=0.3.0" -o dist/accel-menu-go .
+  -ldflags "-s -w -X main.version=0.4.0" -o dist/accel-menu-go .
 ```
 
 Результат — `dist/accel-menu-go` (ELF x86-64, статический).
@@ -86,6 +98,8 @@ ssh admin@bras.example.com \
 ```
 
 Существующие `accel-menu.sh`, `accel-menu-tui`, `accel-menu-old` не перезаписываются.
+Для F6 нужны `bmon` и `tcpdump` (пакеты `bmon`, `tcpdump`); conntrack читается из
+`/proc/net/nf_conntrack`, поэтому приложение запускается от root.
 
 Перед первым запуском установите файл настроек с логином/паролем БД (раздел «Настройки»):
 
@@ -134,6 +148,8 @@ sudo /opt/docker/bin/accel-menu-go --check
   },
   "iface": "enp1s0f1np1",
   "log_path": "/var/log/accel-ppp/accel-ppp.log",
+  "accel_conf": "/etc/accel-ppp.conf",
+  "uplink_iface": "",
   "nft": { "family": "inet", "table": "filter" },
   "networks": { "main": "10.92.0.0/24", "guest": "10.0.0.0/24" },
   "accel_unit": "accel-ppp",
@@ -149,6 +165,8 @@ sudo /opt/docker/bin/accel-menu-go --check
 
 Поля, кроме `database.user` и `database.password`, необязательны и имеют разумные значения
 по умолчанию. Для `database` также можно задать `host` (по умолчанию `127.0.0.1:3306`) и `name`.
+`uplink_iface` пустой — интерфейс аплинка определяется по `ip route show default`;
+`accel_conf` задаёт путь к конфигу accel-ppp для просмотра на F9.
 
 Установка конфига (файл `config.json` создаётся администратором локально и не коммитится):
 

@@ -8,6 +8,8 @@
   "iface": "enp1s0f1np1",
   "log_path": "/var/log/accel-ppp/accel-ppp.log",
   "emerg_path": "/var/log/accel-ppp/emerg.log",
+  "accel_conf": "/etc/accel-ppp.conf",
+  "uplink_iface": "",
   "nft": {
     "family": "inet",
     "table": "filter"

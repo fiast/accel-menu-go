@@ -1,10 +1,14 @@
 package tui
 
 import (
+	"bufio"
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rivo/tview"
@@ -293,13 +297,17 @@ func (a *App) openSessionMenu() {
 		ses.Username, ses.IP, ses.IfName, ses.Type)
 	m := tview.NewModal().
 		SetText(tview.Escape(text)).
-		AddButtons([]string{"bmon", "Прервать", "Отмена"}).
+		AddButtons([]string{"bmon", "tcpdump", "conntrack", "Прервать", "Отмена"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 			a.closeModal()
 			switch buttonIndex {
 			case 0:
 				a.runBmonSession(ses)
 			case 1:
+				a.runTcpdumpSession(ses)
+			case 2:
+				a.openConntrackSession(ses)
+			case 3:
 				a.confirmTerminateSessionFor(ses)
 			}
 		})
@@ -352,6 +360,105 @@ func (a *App) runBmonSession(ses accel.Session) {
 	}
 	a.setStatus("ok", "bmon завершён: "+ifname)
 	a.loadSessions()
+}
+
+func (a *App) runTcpdump() {
+	ses, ok := a.sess.SelectedSession()
+	if !ok {
+		a.setStatus("warn", "сессия не выбрана")
+		return
+	}
+	a.runTcpdumpSession(ses)
+}
+
+func (a *App) runTcpdumpSession(ses accel.Session) {
+	if a.modalOpen || a.popupOpen {
+		return
+	}
+	ifname := strings.TrimSpace(ses.IfName)
+	if ifname == "" {
+		a.setStatus("warn", "у сессии нет имени интерфейса")
+		return
+	}
+	bin, err := execx.Resolve("tcpdump")
+	if err != nil {
+		a.showInfo("tcpdump", "tcpdump не найден в системе: "+err.Error())
+		return
+	}
+	args := []string{"-n", "-l", "-i", ifname}
+	if ip := strings.TrimSpace(ses.IP); ip != "" {
+		args = append(args, "host", ip)
+	}
+
+	a.tcpdump.Reset(ses)
+	a.openPopup(pageTcpdump, "tcpdump", a.tcpdump.root, a.tcpdump.view)
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.tdCancel = cancel
+
+	cmd := exec.CommandContext(ctx, bin, args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		cancel()
+		a.tdCancel = nil
+		a.closePopup()
+		a.showInfo("tcpdump", err.Error())
+		return
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		cancel()
+		a.tdCancel = nil
+		a.closePopup()
+		a.showInfo("tcpdump", err.Error())
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		cancel()
+		a.tdCancel = nil
+		a.closePopup()
+		a.showInfo("tcpdump", "не удалось запустить tcpdump:\n"+err.Error())
+		return
+	}
+	a.setStatus("info", "tcpdump "+ifname+" — Esc остановить")
+
+	go func() {
+		var wg sync.WaitGroup
+		scan := func(r io.Reader) {
+			defer wg.Done()
+			sc := bufio.NewScanner(r)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			for sc.Scan() {
+				line := sc.Text()
+				a.queue(func() {
+					if a.popupOpen && a.popupKind == "tcpdump" {
+						a.tcpdump.AddLine(line)
+					}
+				})
+			}
+		}
+		wg.Add(2)
+		go scan(stdout)
+		go scan(stderr)
+		wg.Wait()
+		runErr := cmd.Wait()
+		a.queue(func() {
+			if a.popupOpen && a.popupKind == "tcpdump" {
+				if runErr != nil && !strings.Contains(strings.ToLower(runErr.Error()), "killed") {
+					a.tcpdump.Notice("tcpdump завершён: " + runErr.Error())
+				} else {
+					a.tcpdump.Notice("tcpdump остановлен")
+				}
+			}
+			a.tdCancel = nil
+		})
+	}()
+}
+
+func (a *App) stopTcpdump() {
+	if a.tdCancel != nil {
+		a.tdCancel()
+		a.tdCancel = nil
+	}
 }
 
 func (a *App) confirmTerminateSession() {

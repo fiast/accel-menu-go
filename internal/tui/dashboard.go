@@ -45,28 +45,59 @@ func (p *dashboardPage) Render(d service.Dashboard) {
 	p.sys.SetText(b.String())
 
 	b.Reset()
-	fmt.Fprintf(&b, "[yellow]Iface[-]     %s\n", d.Iface)
-	fmt.Fprintf(&b, "[yellow]Rx[-]        [white]%s[-]\n", formatRate(d.RxRate))
-	fmt.Fprintf(&b, "[yellow]Tx[-]        [white]%s[-]\n", formatRate(d.TxRate))
-	fmt.Fprintf(&b, "[yellow]Пакеты[-]    %s / %s\n", formatCount(d.RxPackets), formatCount(d.TxPackets))
+	fmt.Fprintf(&b, "[yellow]Iface[-]   %s  [yellow]Rx[-] %s  [yellow]Tx[-] %s\n",
+		d.Iface, formatRate(d.RxRate), formatRate(d.TxRate))
 	ct := d.ConntrackTotal
 	if ct == 0 {
 		ct = d.Conntrack
 	}
-	suffix := ""
+	ctSuffix := ""
 	if d.Conntrack > 0 {
-		suffix = fmt.Sprintf(" (абон. %d)", d.Conntrack)
+		ctSuffix = fmt.Sprintf(" (абон. %d)", d.Conntrack)
 	}
-	fmt.Fprintf(&b, "[yellow]Conntrack[-] %d / %d%s\n", ct, d.ConntrackMax, suffix)
-	if len(d.MasqIfaces) > 0 {
-		fmt.Fprintf(&b, "[yellow]Masq[-]      %s\n", strings.Join(d.MasqIfaces, ", "))
+	fmt.Fprintf(&b, "[yellow]Пакеты[-]  %s / %s  [yellow]CT[-] %d/%d%s\n",
+		formatCount(d.RxPackets), formatCount(d.TxPackets), ct, d.ConntrackMax, ctSuffix)
+
+	up := d.Uplink
+	if up.Iface == "" {
+		b.WriteString("[yellow]Uplink[-]  [red]не определён[-]\n")
 	} else {
-		b.WriteString("[yellow]Masq[-]      [red]нет правил[-]\n")
+		state := up.OperState
+		if state == "" {
+			state = "—"
+		}
+		stateTag := "[white]" + tview.Escape(state) + "[-]"
+		if !strings.EqualFold(state, "up") {
+			stateTag = "[red]" + tview.Escape(state) + "[-]"
+		}
+		duplex := up.Duplex
+		if duplex == "" {
+			duplex = "—"
+		}
+		speed := "—"
+		if up.SpeedMbps > 0 {
+			speed = fmt.Sprintf("%d Mb/s", up.SpeedMbps)
+		}
+		fmt.Fprintf(&b, "[yellow]Uplink[-]  %s %s/%s %s\n",
+			tview.Escape(up.Iface), stateTag, tview.Escape(duplex), speed)
+		fmt.Fprintf(&b, "[yellow]Up Rx[-]   %s  [yellow]Tx[-] %s\n",
+			formatRate(up.RxRate), formatRate(up.TxRate))
+		fmt.Fprintf(&b, "[yellow]Up пакеты[-] %s / %s  [yellow]всего[-] %s / %s\n",
+			formatCount(up.RxPackets), formatCount(up.TxPackets),
+			formatBytes(float64(up.RxBytes)), formatBytes(float64(up.TxBytes)))
+		fmt.Fprintf(&b, "[yellow]Up дропы[-] %d / %d  [yellow]ошибки[-] %d / %d\n",
+			up.RxDropped, up.TxDropped, up.RxErrors, up.TxErrors)
+	}
+
+	if len(d.MasqIfaces) > 0 {
+		fmt.Fprintf(&b, "[yellow]Masq[-]     %s", strings.Join(d.MasqIfaces, ", "))
+	} else {
+		b.WriteString("[yellow]Masq[-]     [red]нет правил[-]")
 	}
 	if len(d.MasqIPs) > 0 {
-		fmt.Fprintf(&b, "[yellow]Внешние IP[-] %s\n", strings.Join(d.MasqIPs, ", "))
+		fmt.Fprintf(&b, "  [yellow]IP[-] %s", strings.Join(d.MasqIPs, ", "))
 	}
-	fmt.Fprintf(&b, "[yellow]ip_forward[-] %s\n", yesNo(d.IPForward))
+	fmt.Fprintf(&b, "  [yellow]fwd[-] %s\n", yesNo(d.IPForward))
 	p.net.SetText(b.String())
 
 	b.Reset()

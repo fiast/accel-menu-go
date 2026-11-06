@@ -23,6 +23,8 @@ func TestLoad(t *testing.T) {
 	data := `{
 	  "database": {"host": "127.0.0.1:3306", "user": "dbuser", "password": "dbpass", "name": "radius"},
 	  "iface": "eth9",
+	  "accel_conf": "/tmp/accel-ppp.conf",
+	  "uplink_iface": "wan0",
 	  "refresh": "3s",
 	  "tail_lines": 100
 	}`
@@ -40,6 +42,9 @@ func TestLoad(t *testing.T) {
 	}
 	if c.Iface != "eth9" || c.Refresh != 3*time.Second || c.TailLines != 100 {
 		t.Fatalf("настройки не применены: %+v", c)
+	}
+	if c.AccelConf != "/tmp/accel-ppp.conf" || c.UplinkIface != "wan0" {
+		t.Fatalf("новые поля не прочитаны: %+v", c)
 	}
 	if c.ConfigPath != path || c.ConfigMode.Perm() != 0o600 {
 		t.Fatalf("путь/права: %q %v", c.ConfigPath, c.ConfigMode)

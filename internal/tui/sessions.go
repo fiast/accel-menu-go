@@ -15,6 +15,8 @@ type sessionsPage struct {
 	table  *tview.Table
 
 	bmonBtn    *tview.Button
+	tcpdumpBtn *tview.Button
+	ctBtn      *tview.Button
 	killBtn    *tview.Button
 	refreshBtn *tview.Button
 
@@ -57,6 +59,10 @@ func newSessionsPage(a *App) *sessionsPage {
 
 	p.bmonBtn = newButton("bmon (B)")
 	p.bmonBtn.SetSelectedFunc(a.runBmon)
+	p.tcpdumpBtn = newButton("tcpdump (T)")
+	p.tcpdumpBtn.SetSelectedFunc(a.runTcpdump)
+	p.ctBtn = newButton("conntrack (C)")
+	p.ctBtn.SetSelectedFunc(a.openConntrackSelected)
 	p.killBtn = newButton("Прервать (Del)")
 	p.killBtn.SetSelectedFunc(a.confirmTerminateSession)
 	p.refreshBtn = newButton("Обновить (F5)")
@@ -64,6 +70,8 @@ func newSessionsPage(a *App) *sessionsPage {
 
 	buttons := tview.NewFlex().
 		AddItem(p.bmonBtn, 0, 1, false).
+		AddItem(p.tcpdumpBtn, 0, 1, false).
+		AddItem(p.ctBtn, 0, 1, false).
 		AddItem(p.killBtn, 0, 1, false).
 		AddItem(p.refreshBtn, 0, 1, false)
 	buttons.SetBackgroundColor(colBg)

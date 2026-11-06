@@ -16,6 +16,7 @@ type diagPage struct {
 	reloadBtn  *tview.Button
 	restartBtn *tview.Button
 	hardBtn    *tview.Button
+	confBtn    *tview.Button
 	refreshBtn *tview.Button
 }
 
@@ -32,10 +33,13 @@ func newDiagPage(a *App) *diagPage {
 	restart.SetSelectedFunc(a.confirmRestart)
 	hard := newButton("Hard restart (K)")
 	hard.SetSelectedFunc(a.confirmHardRestart)
+	conf := newButton("Конфиг (C)")
+	conf.SetSelectedFunc(a.openAccelConfig)
 	refresh := newButton("Обновить (F5)")
 	refresh.SetSelectedFunc(a.loadDiag)
 
 	buttons := tview.NewFlex().
+		AddItem(conf, 0, 1, false).
 		AddItem(reload, 0, 1, false).
 		AddItem(restart, 0, 1, false).
 		AddItem(hard, 0, 1, false).
@@ -47,7 +51,7 @@ func newDiagPage(a *App) *diagPage {
 		AddItem(buttons, 1, 0, false)
 	root.SetBackgroundColor(colBg)
 
-	return &diagPage{root: root, table: t, reloadBtn: reload, restartBtn: restart, hardBtn: hard, refreshBtn: refresh}
+	return &diagPage{root: root, table: t, reloadBtn: reload, restartBtn: restart, hardBtn: hard, confBtn: conf, refreshBtn: refresh}
 }
 
 func (p *diagPage) Render(checks []service.Check) {

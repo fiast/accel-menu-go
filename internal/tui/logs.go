@@ -14,6 +14,8 @@ type logsPage struct {
 	search *tview.InputField
 	view   *tview.TextView
 	bar    *scrollbar
+	title  string
+	follow bool
 
 	all      []string
 	filtered []string
@@ -21,7 +23,11 @@ type logsPage struct {
 }
 
 func newLogsPage() *logsPage {
-	p := &logsPage{}
+	return newLogsPageTitle("ЖУРНАЛ ACCEL-PPP", true)
+}
+
+func newLogsPageTitle(title string, follow bool) *logsPage {
+	p := &logsPage{title: title, follow: follow}
 
 	p.search = tview.NewInputField().
 		SetLabel("Поиск: ").
@@ -36,10 +42,10 @@ func newLogsPage() *logsPage {
 		p.view.ScrollToBeginning()
 	})
 
-	p.view = newPanel("ЖУРНАЛ ACCEL-PPP")
+	p.view = newPanel(title)
 	p.view.SetScrollable(true)
 	p.view.SetWrap(false)
-	p.view.SetText("[gray]загрузка журнала…[-]")
+	p.view.SetText("[gray]загрузка…[-]")
 
 	p.bar = newScrollbar(p.view)
 	body := tview.NewFlex().
@@ -59,13 +65,13 @@ func (p *logsPage) Render(lines []string, err error) {
 	if err != nil {
 		p.all = nil
 		p.filtered = nil
-		p.view.SetText("[red]не удалось прочитать лог: " + tview.Escape(err.Error()) + "[-]")
-		p.view.SetTitle(" ЖУРНАЛ ACCEL-PPP ")
+		p.view.SetText("[red]не удалось прочитать: " + tview.Escape(err.Error()) + "[-]")
+		p.view.SetTitle(" " + p.title + " ")
 		p.bar.SetTotal(0)
 		return
 	}
 	p.all = lines
-	p.apply(true)
+	p.apply(p.follow)
 }
 
 func (p *logsPage) apply(follow bool) {
@@ -105,9 +111,9 @@ func (p *logsPage) apply(follow bool) {
 	p.bar.SetTotal(len(filtered))
 
 	if q == "" {
-		p.view.SetTitle(fmt.Sprintf(" ЖУРНАЛ ACCEL-PPP — %d строк ", len(filtered)))
+		p.view.SetTitle(fmt.Sprintf(" %s — %d строк ", p.title, len(filtered)))
 	} else {
-		p.view.SetTitle(fmt.Sprintf(" ЖУРНАЛ ACCEL-PPP — найдено %d из %d: %s ", len(filtered), len(p.all), q))
+		p.view.SetTitle(fmt.Sprintf(" %s — найдено %d из %d: %s ", p.title, len(filtered), len(p.all), q))
 	}
 	if follow && atBottom {
 		p.view.ScrollToEnd()

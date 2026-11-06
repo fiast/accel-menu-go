@@ -96,6 +96,15 @@ func runCheck(svc *service.Service, cfg config.Config) int {
 	fmt.Printf("  сессии    %d (PPPoE %d, IPoE %d), starting %d\n", d.SessionsActive, d.PPPoE, d.IPoE, d.SessionsStarting)
 	fmt.Printf("  сеть      Rx %s, Tx %s, пакеты %d/%d\n",
 		humanRate(d.RxRate), humanRate(d.TxRate), d.RxPackets, d.TxPackets)
+	if d.Uplink.Iface != "" {
+		fmt.Printf("  uplink    %s %s/%s %d Mb/s, Rx %s, Tx %s, пакеты %d/%d, всего %d/%d, дропы %d/%d, ошибки %d/%d\n",
+			d.Uplink.Iface, d.Uplink.OperState, d.Uplink.Duplex, d.Uplink.SpeedMbps,
+			humanRate(d.Uplink.RxRate), humanRate(d.Uplink.TxRate),
+			d.Uplink.RxPackets, d.Uplink.TxPackets,
+			d.Uplink.RxBytes, d.Uplink.TxBytes,
+			d.Uplink.RxDropped, d.Uplink.TxDropped,
+			d.Uplink.RxErrors, d.Uplink.TxErrors)
+	}
 	fmt.Printf("  conntrack %d / %d (абон. %d)\n", d.ConntrackTotal, d.ConntrackMax, d.Conntrack)
 	fmt.Printf("  docker    %s: %s, %s: %s\n", cfg.RadiusCTR, d.RadiusCTR, cfg.DBCTR, d.DBCTR)
 	fmt.Printf("  accel     %s / %s, uptime %s\n", d.AccelState, d.AccelEnabled, d.Uptime)

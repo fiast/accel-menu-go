@@ -63,6 +63,7 @@ func TestReadNetStatsAt(t *testing.T) {
 	}
 	files := map[string]string{
 		"rx_bytes": "123", "tx_bytes": "456", "rx_packets": "7", "tx_packets": "8",
+		"rx_errors": "9", "tx_errors": "10", "rx_dropped": "11", "tx_dropped": "12",
 	}
 	for name, val := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(val+"\n"), 0o644); err != nil {
@@ -75,6 +76,32 @@ func TestReadNetStatsAt(t *testing.T) {
 	}
 	if st.RxBytes != 123 || st.TxBytes != 456 || st.RxPackets != 7 || st.TxPackets != 8 {
 		t.Fatalf("%+v", st)
+	}
+	if st.RxErrors != 9 || st.TxErrors != 10 || st.RxDropped != 11 || st.TxDropped != 12 {
+		t.Fatalf("errors/drops: %+v", st)
+	}
+}
+
+func TestReadLinkInfoAt(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "eth0")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"operstate": "up\n", "speed": "1000\n", "duplex": "full\n", "mtu": "1500\n",
+	}
+	for name, val := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(val), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	li, err := ReadLinkInfoAt(root, "eth0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if li.OperState != "up" || li.SpeedMbps != 1000 || li.Duplex != "full" || li.MTU != 1500 {
+		t.Fatalf("%+v", li)
 	}
 }
 
